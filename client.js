@@ -213,6 +213,65 @@ window.__ModuleLoader__.load({
 			return res.json();
 		}
 
+		// ---- 居中编辑弹框 ----
+		function showEditDialog(title, initialValue, isMultiline) {
+			return new Promise(function(resolve) {
+				var overlay = document.createElement('div');
+				overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5)';
+				overlay.addEventListener('click', function(e) { if (e.target === e.currentTarget) { document.body.removeChild(overlay); resolve(null); } });
+
+				var wrap = document.createElement('div');
+				wrap.className = 'reqsys-card-wrap';
+				wrap.style.cssText = 'width:500px;max-width:92vw';
+
+				var card = document.createElement('div');
+				card.className = 'reqsys-card';
+				card.style.cssText = 'padding:24px';
+
+				var titleEl = document.createElement('h3');
+				titleEl.style.cssText = 'margin:0 0 16px 0;font-size:18px;font-weight:600';
+				titleEl.textContent = title;
+
+				var input;
+				if (isMultiline) {
+					input = document.createElement('textarea');
+					input.style.cssText = 'width:100%;min-height:120px;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;line-height:1.5;resize:vertical;box-sizing:border-box;font-family:inherit';
+					input.style.height = Math.max(120, Math.min(400, (initialValue || '').split('\n').length * 24 + 30)) + 'px';
+				} else {
+					input = document.createElement('input');
+					input.type = 'text';
+					input.style.cssText = 'width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;font-family:inherit';
+				}
+				input.value = initialValue || '';
+				input.autofocus = true;
+
+				var btnRow = document.createElement('div');
+				btnRow.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;margin-top:16px';
+
+				var cancelBtn = document.createElement('button');
+				cancelBtn.className = 'reqsys-maid-btn';
+				cancelBtn.textContent = '取消';
+				cancelBtn.addEventListener('click', function() { document.body.removeChild(overlay); resolve(null); });
+
+				var okBtn = document.createElement('button');
+				okBtn.className = 'reqsys-maid-btn primary';
+				okBtn.textContent = '确认';
+				okBtn.addEventListener('click', function() { document.body.removeChild(overlay); resolve(input.value); });
+
+				btnRow.appendChild(cancelBtn);
+				btnRow.appendChild(okBtn);
+
+				card.appendChild(titleEl);
+				card.appendChild(input);
+				card.appendChild(btnRow);
+				wrap.appendChild(card);
+				overlay.appendChild(wrap);
+				document.body.appendChild(overlay);
+
+				setTimeout(function() { input.focus(); input.select(); }, 50);
+			});
+		}
+
 		function fmtTime(iso) {
 			if (!iso) return '';
 			const d = new Date(iso);
@@ -280,6 +339,12 @@ window.__ModuleLoader__.load({
 			const [reqFilterTags, setReqFilterTags] = useState([]);
 			const [reqFilterProgs, setReqFilterProgs] = useState([]);
 			const [reqFilterSearch, setReqFilterSearch] = useState('');
+			const [reqTab, setReqTab] = useState('wish');
+			const [reqTaskInput, setReqTaskInput] = useState('');
+			const [reqTaskDeadline, setReqTaskDeadline] = useState('');
+			const [reqTaskList, setReqTaskList] = useState([]);
+			const [showTasks, setShowTasks] = useState(false);
+			const [showRequirements, setShowRequirements] = useState(false);
 
 			// ============================================================================
 			// 状态轮询 —— 每隔 1.5s 拉取 /pet/state
@@ -789,46 +854,78 @@ window.__ModuleLoader__.load({
 								? h('div', { className: 'reqsys-card-wrap', style: { width: '640px', maxWidth: '92vw' }, children: [
 									h('div', { className: 'reqsys-card', style: { maxHeight: '85vh', overflowY: 'auto' }, children: [
 									h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }, children: [
-									h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '说出你的梦想' }),
-									h('button', { className: 'reqsys-maid-btn', title: '查看愿望清单', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', fontSize: '12px' }, onClick: async () => { setReqView('list'); setReqLoading(true); try { const data = await reqsysFetch('/requirements'); setReqList(data || []); } catch(e) { alert('加载失败: ' + e.message); } setReqLoading(false); }, children: [h('img', { src: 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>'), style: { width: '20px', height: '20px', display: 'block' } }), '愿望清单'] }),
+									h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' }, children: [
+										h('span', { style: { padding: '6px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', background: reqTab === 'wish' ? '#526aa8' : '#f0f2f5', color: reqTab === 'wish' ? '#fff' : '#555' }, onClick: function() { setReqTab('wish'); }, children: '事已至此' }),
+										h('span', { style: { padding: '6px 16px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', background: reqTab === 'task' ? '#526aa8' : '#f0f2f5', color: reqTab === 'task' ? '#fff' : '#555' }, onClick: function() { setReqTab('task'); }, children: '你看，又急' }),
 									]}),
-									h('p', { style: { fontSize: '13px', color: '#666', margin: '-8px 0 12px 0' }, children: '支持使用 1. 2. 或 1、 2、 或 - 拆分多条需求' }),
-									h('textarea', { value: reqInput, onChange: (e) => setReqInput(e.target.value), placeholder: '例如：\n1. OA审批流程优化\n2. 销售报表按月份筛选\n3. 预算系统对接财务', style: { width: '100%', minHeight: '140px', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }, autoFocus: true }),
-									h('div', { style: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }, children: [
-										h('button', { className: 'reqsys-maid-btn', onClick: () => setReqView(null), children: '取消' }),
-										h('button', { className: 'reqsys-maid-btn primary', onClick: async () => {
-											if (!reqInput.trim()) return;
-											setReqLoading(true);
-											try {
-												const lines = reqInput.split('\n');
-												const items = []; let current = '';
-												const itemPattern = /^\s*(?:\d+[.、）)]|[-*•]|\(\d+\))\s*/;
-												for (const line of lines) { const l = line.trim(); if (!l) continue; if (itemPattern.test(l)) { if (current) items.push(current.trim()); current = l.replace(itemPattern, '').trim(); } else { if (current) current += ' ' + l; else current = l; } }
-												if (current) items.push(current.trim());
-												const processed = items.map(function(t) {
-												var text = t.toLowerCase();
-												var autoTags = [];
-												var rules = [
-													{ keywords: ['oa'], tag: 'OA' },
-													{ keywords: ['qsale', '销售'], tag: '销售' },
-													{ keywords: ['预算系统'], tag: 'budget' },
-												];
-												for (var ri = 0; ri < rules.length; ri++) {
-													for (var ki = 0; ki < (rules[ri].keywords || []).length; ki++) {
-														if (text.indexOf(rules[ri].keywords[ki].toLowerCase()) !== -1) {
-															if (autoTags.indexOf(rules[ri].tag) === -1) autoTags.push(rules[ri].tag);
+									h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' }, children: [
+										h('button', { className: 'reqsys-maid-btn', title: '查看行迹', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', fontSize: '12px', background: '#8e6bb0', color: '#fff', border: 'none' }, onClick: async () => { setShowRequirements(true); setReqLoading(true); try { const data = await reqsysFetch('/requirements'); setReqList(data || []); } catch(e) { alert('加载失败: ' + e.message); } setReqLoading(false); }, children: '行迹' }),
+										h('button', { className: 'reqsys-maid-btn', title: '查看未竟', style: { display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', fontSize: '12px', background: '#8e6bb0', color: '#fff', border: 'none' }, onClick: async () => { setShowTasks(true); setReqLoading(true); try { const data = await reqsysFetch('/tasks'); setReqTaskList(data || []); } catch(e) { alert('加载失败: ' + e.message); } setReqLoading(false); }, children: '未竟' }),
+									]}),
+									]}),
+									reqTab === 'wish'
+									? h('div', { children: [
+										h('p', { style: { fontSize: '13px', color: '#666', margin: '-8px 0 12px 0' }, children: '早点录完，早点休息' }),
+										h('textarea', { value: reqInput, onChange: (e) => setReqInput(e.target.value), placeholder: '例如：\n1. OA审批流程优化\n2. 销售报表按月份筛选\n3. 预算系统对接财务', style: { width: '100%', minHeight: '140px', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }, autoFocus: true }),
+										h('div', { style: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }, children: [
+											h('button', { className: 'reqsys-maid-btn', onClick: () => setReqView(null), children: '取消' }),
+											h('button', { className: 'reqsys-maid-btn primary', onClick: async () => {
+												if (!reqInput.trim()) return;
+												setReqLoading(true);
+												try {
+													const lines = reqInput.split('\n');
+													const items = []; let current = '';
+													const itemPattern = /^\s*(?:\d+[.、）)]|[-*•]|\(\d+\))\s*/;
+													for (const line of lines) { const l = line.trim(); if (!l) continue; if (itemPattern.test(l)) { if (current) items.push(current.trim()); current = l.replace(itemPattern, '').trim(); } else { if (current) current += ' ' + l; else current = l; } }
+													if (current) items.push(current.trim());
+													const processed = items.map(function(t) {
+													var text = t.toLowerCase();
+													var autoTags = [];
+													var rules = [
+														{ keywords: ['oa'], tag: 'OA' },
+														{ keywords: ['qsale', '销售'], tag: '销售' },
+														{ keywords: ['预算系统'], tag: 'budget' },
+													];
+													for (var ri = 0; ri < rules.length; ri++) {
+														for (var ki = 0; ki < (rules[ri].keywords || []).length; ki++) {
+															if (text.indexOf(rules[ri].keywords[ki].toLowerCase()) !== -1) {
+																if (autoTags.indexOf(rules[ri].tag) === -1) autoTags.push(rules[ri].tag);
+															}
 														}
 													}
-												}
-												return { original: t, polished: t, tags: autoTags };
-											});
-												if (processed.length === 0) { alert('未识别到有效需求'); return; }
-												setReqResult({ items: processed, multi: processed.length > 1 });
-												setReqView('preview');
-											} catch(e) { alert('处理失败: ' + e.message); }
-											setReqLoading(false);
-										}, disabled: reqLoading || !reqInput.trim(), children: reqLoading ? '处理中...' : '提交' }),
-									]}),
+													return { original: t, polished: t, tags: autoTags };
+												});
+													if (processed.length === 0) { alert('未识别到有效需求'); return; }
+													setReqResult({ items: processed, multi: processed.length > 1 });
+													setReqView('preview');
+												} catch(e) { alert('处理失败: ' + e.message); }
+												setReqLoading(false);
+											}, disabled: reqLoading || !reqInput.trim(), children: reqLoading ? '处理中...' : '提交' }),
+										]}),
+									] })
+									: h('div', { children: [
+										h('p', { style: { fontSize: '13px', color: '#666', margin: '-8px 0 12px 0' }, children: '我知道你很急，但是别急' }),
+										h('textarea', { value: reqTaskInput, onChange: (e) => setReqTaskInput(e.target.value), placeholder: '描述待办事项...', style: { width: '100%', minHeight: '80px', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }, autoFocus: true }),
+										h('div', { style: { marginTop: '12px', fontSize: '13px', color: '#555', display: 'flex', alignItems: 'center', gap: '10px' }, children: [
+											h('span', { children: '截止日期：' }),
+											h('input', { type: 'date', value: reqTaskDeadline, onChange: (e) => setReqTaskDeadline(e.target.value), style: { padding: '6px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px', flex: 1 } }),
+										]}),
+										h('div', { style: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }, children: [
+											h('button', { className: 'reqsys-maid-btn', onClick: () => setReqView(null), children: '取消' }),
+											h('button', { className: 'reqsys-maid-btn primary', onClick: async () => {
+												if (!reqTaskInput.trim()) return;
+												setReqLoading(true);
+												try {
+													var resp = await fetch(REQSYS_API + '/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: reqTaskInput.trim(), deadline: reqTaskDeadline }) });
+													var respData = await resp.json();
+													if (!resp.ok) { alert('保存失败: ' + (respData.error || resp.status)); return; }
+													setReqTaskInput(''); setReqTaskDeadline(''); setReqView(null);
+													alert('已添加待办');
+												} catch(e) { alert('保存失败: ' + e.message); }
+												setReqLoading(false);
+											}, disabled: reqLoading || !reqTaskInput.trim(), children: reqLoading ? '处理中...' : '添加' }),
+										]}),
+									] }),
 								]})]})
 								: reqView === 'preview' && reqResult
 									? h('div', { className: 'reqsys-card-wrap', style: { width: '700px', maxWidth: '92vw' }, children: [
@@ -866,23 +963,35 @@ window.__ModuleLoader__.load({
 											}, disabled: reqLoading, children: reqLoading ? '保存中...' : '确认保存' }),
 										]}),
 									]})]})
-									: reqView === 'list'
-										? reqLoading
-											? h('div', { className: 'reqsys-card-wrap', style: { width: '960px', maxWidth: '92vw' }, children: [
-												h('div', { className: 'reqsys-card', style: { maxHeight: '85vh', overflowY: 'auto' }, children: [
-												h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }, children: [
-													h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 愿望清单' }),
-													h('button', { className: 'reqsys-maid-btn', onClick: () => setReqView(null), children: '关闭' }),
-												]}),
-												h('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#999', fontSize: '14px' }, children: [
-													h('div', { style: { fontSize: '32px', marginBottom: '12px' }, children: '⏳' }),
-													h('div', { children: '加载中...' }),
-												]}),
-											]})]})
-											: h(ReqsysListView, { reqList: reqList, setReqList: setReqList, reqFilterTags: reqFilterTags, setReqFilterTags: setReqFilterTags, reqFilterProgs: reqFilterProgs, setReqFilterProgs: setReqFilterProgs, reqFilterSearch: reqFilterSearch, setReqFilterSearch: setReqFilterSearch, onClose: function() { setReqView(null); } })
-										: null
+									: null
 						})
 						: null,
+					// 行迹列表
+					showRequirements
+						? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.5)' }, onClick: function(e) { if (e.target === e.currentTarget) setShowRequirements(false); }, children: reqLoading
+							? h('div', { className: 'reqsys-card-wrap', style: { width: '960px', maxWidth: '92vw' }, children: [
+								h('div', { className: 'reqsys-card', style: { height: '70vh', overflowY: 'auto' }, children: [
+								h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }, children: [
+									h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 行迹' }),
+									h('button', { className: 'reqsys-maid-btn', onClick: () => setShowRequirements(false), children: '关闭' }),
+								]}),
+								h('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#999', fontSize: '14px' }, children: [
+									h('div', { style: { fontSize: '32px', marginBottom: '12px' }, children: '⏳' }),
+									h('div', { children: '加载中...' }),
+								]}),
+							]})]})
+							: h(ReqsysListView, { reqList: reqList, setReqList: setReqList, reqFilterTags: reqFilterTags, setReqFilterTags: setReqFilterTags, reqFilterProgs: reqFilterProgs, setReqFilterProgs: setReqFilterProgs, reqFilterSearch: reqFilterSearch, setReqFilterSearch: setReqFilterSearch, onClose: function() { setShowRequirements(false); } })
+						})
+						: null,
+					// 未竟任务列表
+					showTasks ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 10000, pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.5)' }, onClick: function(e) { if (e.target === e.currentTarget) setShowTasks(false); }, children: reqTaskList.length === 0
+								? h('div', { className: 'reqsys-card-wrap', style: { width: '500px', maxWidth: '92vw' }, children: h('div', { className: 'reqsys-card', style: { textAlign: 'center', padding: '40px 20px' }, children: [
+									h('div', { style: { fontSize: '32px', marginBottom: '12px' }, children: '📭' }),
+									h('div', { style: { fontSize: '14px', color: '#999', marginBottom: '16px' }, children: '暂无未竟之事' }),
+									h('button', { className: 'reqsys-maid-btn', onClick: function() { setShowTasks(false); }, children: '关闭' }),
+								]}) })
+								: h(TaskListView, { taskList: reqTaskList, setTaskList: setReqTaskList, onClose: function() { setShowTasks(false); } })
+						}) : null,
 				],
 			});
 		}
@@ -966,6 +1075,17 @@ window.__ModuleLoader__.load({
 				}).catch(function(e) { alert('更新失败: ' + e.message); });
 			}
 
+			function updateReqPolished(id, polished) {
+				return reqsysFetch('/requirements/' + id, { method: 'PUT', body: JSON.stringify({ polished: polished }) }).then(function() {
+					setReqList(function(list) {
+						return list.map(function(r) {
+							if (r.id !== id) return r;
+							return Object.assign({}, r, { polished: polished });
+						});
+					});
+				}).catch(function(e) { alert('更新失败: ' + e.message); });
+			}
+
 			// 标签规则管理弹窗
 			if (showRulesVal) {
 				return h('div', { style: { position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: function(e) { if (e.target === e.currentTarget) setShowRules(false); }, children: h('div', { className: 'reqsys-card-wrap', style: { width: '500px', maxWidth: '92vw' }, children: [
@@ -992,10 +1112,10 @@ window.__ModuleLoader__.load({
 			return h('div', { className: 'reqsys-card-wrap', style: { width: '960px', maxWidth: '92vw' }, children: [
 				h('div', { className: 'reqsys-card', style: { height: '70vh', overflowY: 'auto' }, children: [
 				h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }, children: [
-					h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 愿望清单' }),
+					h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 行迹' }),
 					h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' }, children: [
-						h('button', { className: 'reqsys-maid-btn', style: { background: '#25a55e', color: '#fff', border: 'none' }, onClick: function() { var BOM = '\uFEFF'; var header = '记录时间,需求描述,标签,当前进展,版本,废弃原因\n'; var rows = filtered.map(function(r) { var desc = (r.polished || r.original || '').replace(/"/g, '""'); var tags = (r.tags || []).join('; '); return fmtTime(r.timestamp) + ',"' + desc + '",' + tags + ',' + (r.progress || '未处理') + ',' + (r.version || '') + ',' + (r.reason || ''); }).join('\n'); var blob = new Blob([BOM + header + rows], { type: 'text/csv;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '愿望清单_' + new Date().toISOString().slice(0,10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 CSV' }),
-						h('button', { className: 'reqsys-maid-btn', onClick: function() { var blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '愿望清单_' + new Date().toISOString().slice(0,10) + '.json'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 JSON' }),
+						h('button', { className: 'reqsys-maid-btn', style: { background: '#25a55e', color: '#fff', border: 'none' }, onClick: function() { var BOM = '\uFEFF'; var header = '记录时间,需求描述,标签,当前进展,版本,废弃原因\n'; var rows = filtered.map(function(r) { var desc = (r.polished || r.original || '').replace(/"/g, '""'); var tags = (r.tags || []).join('; '); return fmtTime(r.timestamp) + ',"' + desc + '",' + tags + ',' + (r.progress || '未处理') + ',' + (r.version || '') + ',' + (r.reason || ''); }).join('\n'); var blob = new Blob([BOM + header + rows], { type: 'text/csv;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '行迹_' + new Date().toISOString().slice(0,10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 CSV' }),
+						h('button', { className: 'reqsys-maid-btn', onClick: function() { var blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '行迹_' + new Date().toISOString().slice(0,10) + '.json'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 JSON' }),
 						h('button', { className: 'reqsys-maid-btn', style: { background: '#8e6bb0', color: '#fff', border: 'none' }, onClick: function() { reqsysFetch('/rules').then(function(r) { setRules(r || []); setShowRules(true); }).catch(function(e) { alert('加载规则失败: ' + e.message); }); }, children: '⚙ 配置标签' }),
 						h('button', { className: 'reqsys-maid-btn', onClick: onClose, children: '关闭' }),
 					]}),
@@ -1046,18 +1166,20 @@ window.__ModuleLoader__.load({
 							h('th', { style: { width: '100px' }, children: '当前进展' }),
 							h('th', { style: { width: '80px' }, children: '版本' }),
 							h('th', { style: { width: '80px' }, children: '废弃原因' }),
+							h('th', { style: { width: '50px' }, children: '操作' }),
 						]}) }),
 						h('tbody', { children: pageItems.map(function(r, i) {
 							return h('tr', { key: r.id, children: [
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', color: '#999', fontSize: '11px' }, children: pageStart + i + 1 }),
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#888', whiteSpace: 'nowrap' }, children: fmtTime(r.timestamp) }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word' }, children: r.polished || r.original || '' }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word', cursor: 'pointer' }, onClick: function() { showEditDialog('编辑需求描述', r.polished || r.original || '', true).then(function(newDesc) { if (newDesc === null) return; updateReqPolished(r.id, newDesc.trim()); }); }, children: r.polished || r.original || '' }),
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: (r.tags || []).map(function(t) {
 									return h('span', { key: t, style: { display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 500, background: '#e8f0fe', color: '#1a5cc8', margin: '1px 2px' }, children: t });
 								}) }),
 								ReqsysSelectCell(r, updateReq),
 								ReqsysVersionCell(r, updateReq),
 								ReqsysReasonCell(r, updateReq),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center' }, onClick: function() { if (confirm('delete this item?')) { reqsysFetch('/requirements/' + r.id, { method: 'DELETE' }).then(function() { setReqList(function(list) { return list.filter(function(item) { return item.id !== r.id; }); }); }).catch(function(e) { alert('delete failed: ' + e.message); }); } }, children: h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, children: 'x' }) }),
 							]});
 						}) }),
 					]}) }),
@@ -1070,20 +1192,135 @@ window.__ModuleLoader__.load({
 			}
 
 		function ReqsysSelectCell(r, updateReq) {
-			return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('select', { value: r.progress || '未处理', onChange: function(e) { var newVal = e.target.value; var curVersion = r.version || ''; var curReason = r.reason || ''; if (newVal === '方案设计' || newVal === '已发布') { if (curVersion) { updateReq(r.id, newVal, curVersion, curReason); } else { var v = prompt('输入版本号', curVersion); if (v === null) return; updateReq(r.id, newVal, v || '', curReason); } } else if (newVal === '废弃') { if (curReason) { updateReq(r.id, newVal, curVersion, curReason); } else { var reason = prompt('输入废弃原因', curReason); if (reason === null) return; updateReq(r.id, newVal, curVersion, reason || ''); } } else { updateReq(r.id, newVal, curVersion, curReason); } }, style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }, children: [h('option', { value: '未处理', children: '未处理' }), h('option', { value: '方案设计', children: '方案设计' }), h('option', { value: '已发布', children: '已发布' }), h('option', { value: '废弃', children: '废弃' })] })});
+			return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('select', { value: r.progress || '未处理', onChange: function(e) { var newVal = e.target.value; var curVersion = r.version || ''; var curReason = r.reason || ''; if (newVal === '方案设计' || newVal === '已发布') { if (curVersion) { updateReq(r.id, newVal, curVersion, curReason); } else { showEditDialog('输入版本号', curVersion, false).then(function(v) { if (v === null) { e.target.value = r.progress || '未处理'; return; } updateReq(r.id, newVal, v || '', curReason); }); } } else if (newVal === '废弃') { if (curReason) { updateReq(r.id, newVal, curVersion, curReason); } else { showEditDialog('输入废弃原因', curReason, true).then(function(reason) { if (reason === null) { e.target.value = r.progress || '未处理'; return; } updateReq(r.id, newVal, curVersion, reason || ''); }); } } else { updateReq(r.id, newVal, curVersion, curReason); } }, style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }, children: [h('option', { value: '未处理', children: '未处理' }), h('option', { value: '方案设计', children: '方案设计' }), h('option', { value: '已发布', children: '已发布' }), h('option', { value: '废弃', children: '废弃' })] })});
 		}
 
 		function ReqsysVersionCell(r, updateReq) {
 			var v = r.version || '';
-			if (!v) return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px', color: '#ccc', cursor: 'pointer' }, onClick: function() { var nv = prompt('输入版本号', ''); if (nv !== null) updateReq(r.id, r.progress || '未处理', nv, r.reason || ''); }, children: '点击添加' });
+			if (!v) return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px', color: '#ccc', cursor: 'pointer' }, onClick: function() { showEditDialog('输入版本号', '', false).then(function(nv) { if (nv !== null) updateReq(r.id, r.progress || '未处理', nv, r.reason || ''); }); }, children: '点击添加' });
 			var cls = r.progress === '已发布' ? 'released' : 'design';
-			return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('span', { className: 'reqsys-version-tag ' + cls, onClick: function() { var nv = prompt('修改版本号', v); if (nv !== null) updateReq(r.id, r.progress || '未处理', nv, r.reason || ''); }, children: v }) });
+			return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('span', { className: 'reqsys-version-tag ' + cls, onClick: function() { showEditDialog('修改版本号', v, false).then(function(nv) { if (nv !== null) updateReq(r.id, r.progress || '未处理', nv, r.reason || ''); }); }, children: v }) });
 		}
 
 		function ReqsysReasonCell(r, updateReq) {
 			var reason = r.reason || '';
-			if (!reason) return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px', color: '#ccc', cursor: 'pointer' }, onClick: function() { var nr = prompt('输入废弃原因', ''); if (nr !== null) updateReq(r.id, r.progress || '未处理', r.version || '', nr); }, children: '点击填写' });
-			return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('span', { className: 'reqsys-reason-text', onClick: function() { var nr = prompt('修改废弃原因', reason); if (nr !== null) updateReq(r.id, r.progress || '未处理', r.version || '', nr); }, children: reason }) });
+			if (!reason) return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px', color: '#ccc', cursor: 'pointer' }, onClick: function() { showEditDialog('输入废弃原因', '', true).then(function(nr) { if (nr !== null) updateReq(r.id, r.progress || '未处理', r.version || '', nr); }); }, children: '点击填写' });
+			return h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('span', { className: 'reqsys-reason-text', onClick: function() { showEditDialog('修改废弃原因', reason, true).then(function(nr) { if (nr !== null) updateReq(r.id, r.progress || '未处理', r.version || '', nr); }); }, children: reason }) });
+		}
+
+		// ============================================================================
+		// 未竟任务列表组件
+		// ============================================================================
+		function TaskListView(props) {
+			var taskList = props.taskList;
+			var setTaskList = props.setTaskList;
+			var onClose = props.onClose;
+
+			var taskFilterStatus = useState([]);
+			var taskFilterStatusVal = taskFilterStatus[0];
+			var setTaskFilterStatus = taskFilterStatus[1];
+			var taskFilterSearch = useState('');
+			var taskFilterSearchVal = taskFilterSearch[0];
+			var setTaskFilterSearch = taskFilterSearch[1];
+			var taskPage = useState(0);
+			var taskPageVal = taskPage[0];
+			var setTaskPage = taskPage[1];
+			var TASK_PAGE_SIZE = 15;
+
+			var allStatuses = ['未开始', '进行中', '已完成'];
+
+			var filtered = taskList.filter(function(t) {
+				if (taskFilterStatusVal.length > 0 && taskFilterStatusVal.indexOf(t.status || '未开始') === -1) return false;
+				if (taskFilterSearchVal.trim()) {
+					var s = taskFilterSearchVal.trim().toLowerCase();
+					var desc = (t.description || '').toLowerCase();
+					if (desc.indexOf(s) === -1) return false;
+				}
+				return true;
+			});
+
+			var totalPages = Math.max(1, Math.ceil(filtered.length / TASK_PAGE_SIZE));
+			var safePage = Math.min(taskPageVal, totalPages - 1);
+			var pageStart = safePage * TASK_PAGE_SIZE;
+			var pageItems = filtered.slice(pageStart, pageStart + TASK_PAGE_SIZE);
+
+			useEffect(function() { setTaskPage(0); }, [taskFilterStatusVal, taskFilterSearchVal]);
+
+			function updateTask(id, updates) {
+				return reqsysFetch('/tasks/' + id, { method: 'PUT', body: JSON.stringify(updates) }).then(function() {
+					setTaskList(function(list) {
+						return list.map(function(t) {
+							if (t.id !== id) return t;
+							return Object.assign({}, t, updates);
+						});
+					});
+				}).catch(function(e) { alert('update failed: ' + e.message); });
+			}
+
+			function deleteTask(id) {
+				if (confirm('delete this item?')) {
+					reqsysFetch('/tasks/' + id, { method: 'DELETE' }).then(function() {
+						setTaskList(function(list) { return list.filter(function(t) { return t.id !== id; }); });
+					}).catch(function(e) { alert('delete failed: ' + e.message); });
+				}
+			}
+
+			return h('div', { className: 'reqsys-card-wrap', style: { width: '800px', maxWidth: '92vw' }, children: [
+				h('div', { className: 'reqsys-card', style: { height: '70vh', overflowY: 'auto' }, children: [
+				h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }, children: [
+					h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 未竟' }),
+					h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' }, children: [
+						h('button', { className: 'reqsys-maid-btn', style: { background: '#25a55e', color: '#fff', border: 'none' }, onClick: function() { var BOM = '\uFEFF'; var header = '待办描述,记录时间,截止日期,完成情况\n'; var rows = filtered.map(function(t) { var desc = (t.description || '').replace(/"/g, '""'); return '"' + desc + '",' + fmtTime(t.timestamp) + ',' + (t.deadline || '') + ',' + (t.status || '未开始'); }).join('\n'); var blob = new Blob([BOM + header + rows], { type: 'text/csv;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '未竟_' + new Date().toISOString().slice(0,10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 CSV' }),
+						h('button', { className: 'reqsys-maid-btn', onClick: function() { var blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '未竟_' + new Date().toISOString().slice(0,10) + '.json'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 JSON' }),
+						h('button', { className: 'reqsys-maid-btn', onClick: onClose, children: '关闭' }),
+					]}),
+				]}),
+				h('div', { className: 'reqsys-filter-bar', children: [
+					h('div', { className: 'filter-group', children: [
+						h('span', { className: 'filter-label', children: '完成情况' }),
+						h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' }, children: allStatuses.map(function(s) {
+							var active = taskFilterStatusVal.indexOf(s) !== -1;
+							return h('span', { key: s, style: { display: 'inline-block', padding: '2px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', background: active ? '#8e6bb0' : '#f0f2f5', color: active ? '#fff' : '#555', border: active ? '1px solid #8e6bb0' : '1px solid #ddd' }, onClick: function() { var idx = taskFilterStatusVal.indexOf(s); if (idx === -1) { setTaskFilterStatus(taskFilterStatusVal.concat([s])); } else { var ns = taskFilterStatusVal.slice(); ns.splice(idx, 1); setTaskFilterStatus(ns); } }, children: s + (active ? ' x' : '') });
+						}) }),
+					]}),
+					h('div', { className: 'filter-group', children: [
+						h('span', { className: 'filter-label', children: '搜索' }),
+						h('input', { type: 'text', value: taskFilterSearchVal, onChange: function(e) { setTaskFilterSearch(e.target.value); }, placeholder: '搜索待办描述...', style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', width: '300px', boxSizing: 'border-box' } }),
+					]}),
+					h('span', { className: 'filter-count', children: '共 ' + filtered.length + ' 条' }),
+				]}),
+				filtered.length === 0
+					? h('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#999' }, children: '暂无匹配的未竟之事' })
+					: h('div', { style: { overflowX: 'auto' }, children: h('table', { className: 'reqsys-table', children: [
+						h('thead', { children: h('tr', { children: [
+							h('th', { style: { width: '40px' }, children: '#' }),
+							h('th', { children: '待办描述' }),
+							h('th', { style: { width: '100px' }, children: '记录时间' }),
+							h('th', { style: { width: '120px' }, children: '截止日期' }),
+							h('th', { style: { width: '100px' }, children: '完成情况' }),
+							h('th', { style: { width: '50px' }, children: '操作' }),
+						]}) }),
+						h('tbody', { children: pageItems.map(function(t, i) {
+							return h('tr', { key: t.id, children: [
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', color: '#999', fontSize: '11px' }, children: pageStart + i + 1 }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word', cursor: 'pointer' }, onClick: function() { showEditDialog('编辑待办描述', t.description, true).then(function(nd) { if (nd === null) return; updateTask(t.id, { description: nd.trim() }); }); }, children: t.description }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#888', whiteSpace: 'nowrap' }, children: fmtTime(t.timestamp) }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px', whiteSpace: 'nowrap', cursor: 'pointer', color: (function() { if (!t.deadline) return 'inherit'; var now = new Date(); var dl = new Date(t.deadline); var diff = (dl - now) / (1000 * 60 * 60 * 24); if (diff < 2 && t.status !== '已完成') return '#e55'; return 'inherit'; })() }, onClick: function(e) { var rect = e.currentTarget.getBoundingClientRect(); var inp = document.createElement('input'); inp.type = 'date'; inp.value = t.deadline || ''; inp.style.position = 'fixed'; inp.style.left = rect.left + 'px'; inp.style.top = rect.bottom + 'px'; inp.style.opacity = '0'; inp.style.pointerEvents = 'none'; inp.style.width = '1px'; inp.style.height = '1px'; document.body.appendChild(inp); inp.addEventListener('change', function() { var val = inp.value; document.body.removeChild(inp); if (val) updateTask(t.id, { deadline: val }); }); inp.addEventListener('blur', function() { if (document.body.contains(inp)) document.body.removeChild(inp); }); setTimeout(function() { inp.showPicker(); }, 10); }, children: t.deadline || '-' }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('select', { value: t.status || '未开始', onChange: function(e) { updateTask(t.id, { status: e.target.value }); }, style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }, children: [
+									h('option', { value: '未开始', children: '未开始' }),
+									h('option', { value: '进行中', children: '进行中' }),
+									h('option', { value: '已完成', children: '已完成' }),
+								] }) }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center' }, children: h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { deleteTask(t.id); }, children: 'x' }) }),
+							]});
+						}) }),
+					]}) }),
+				filtered.length > TASK_PAGE_SIZE ? h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', padding: '12px 0 4px', fontSize: '13px', color: '#555' }, children: [
+					h('button', { className: 'reqsys-maid-btn', style: { padding: '4px 12px', fontSize: '12px' }, onClick: function() { setTaskPage(Math.max(0, taskPageVal - 1)); }, disabled: taskPageVal === 0, children: '< ' }),
+					h('span', { style: { fontSize: '12px', color: '#888' }, children: (taskPageVal + 1) + ' / ' + totalPages }),
+					h('button', { className: 'reqsys-maid-btn', style: { padding: '4px 12px', fontSize: '12px' }, onClick: function() { setTaskPage(Math.min(totalPages - 1, taskPageVal + 1)); }, disabled: taskPageVal >= totalPages - 1, children: ' >' }),
+				]}) : null,
+			]})]});
 		}
 
 		// ============================================================================

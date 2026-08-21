@@ -46,11 +46,21 @@ function reqsysReadData() {
   try {
     return JSON.parse(readFileSync(REQSYS_DATA_FILE, 'utf-8'));
   } catch (e) {
-    return { requirements: [], rules: [
-      { keywords: ['OA'], tag: 'OA' },
-      { keywords: ['qsale', '销售'], tag: '销售' },
-      { keywords: ['预算系统'], tag: '预算系统' },
-    ]};
+    // 主文件损坏，尝试从备份恢复
+    try {
+      const backup = JSON.parse(readFileSync(REQSYS_DATA_FILE + '.backup', 'utf-8'));
+      // 恢复：写回主文件
+      writeFileSync(REQSYS_DATA_FILE, JSON.stringify(backup, null, 2), 'utf-8');
+      console.warn('[dsh-pet] 数据文件损坏，已从备份恢复');
+      return backup;
+    } catch (e2) {
+      // 备份也损坏，返回默认结构
+      return { requirements: [], tasks: [], rules: [
+        { keywords: ['OA'], tag: 'OA' },
+        { keywords: ['qsale', '销售'], tag: '销售' },
+        { keywords: ['预算系统'], tag: '预算系统' },
+      ]};
+    }
   }
 }
 
@@ -116,10 +126,10 @@ function apply(ctx, config) {
       // ---- 状态查询端点 ----
       if (rest === 'pet-status' || rest === 'state') {
         try {
-          // 取第一个 Agent（当前会话）
+          // 取所有 Agent，只要有一个在 running 就显示工作中
           const agents = ctx.agents.list();
-          const agent = agents.length > 0 ? agents[0] : undefined;
-          const status = agent?.status ?? 'idle';
+          const running = agents.some(a => a?.status === 'running');
+          const status = running ? 'running' : 'idle';
 
           // 映射 DSH Agent 状态 → 宠物状态（带状态机）
           const now = Date.now();
@@ -256,6 +266,8 @@ function apply(ctx, config) {
               if (updates.progress !== undefined) r.progress = updates.progress;
               if (updates.version !== undefined) r.version = updates.version;
               if (updates.reason !== undefined) r.reason = updates.reason;
+              if (updates.polished !== undefined) r.polished = updates.polished;
+              if (updates.tags !== undefined) r.tags = updates.tags;
               reqsysWriteData(data);
               res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
               res.end(JSON.stringify({ ok: true }));
@@ -264,6 +276,16 @@ function apply(ctx, config) {
               res.end(JSON.stringify({ error: e.message }));
             }
           });
+          return;
+        }
+        if (req.method === 'DELETE' && id) {
+          const data = reqsysReadData();
+          const idx = data.requirements.findIndex(r => r.id === id);
+          if (idx === -1) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+          data.requirements.splice(idx, 1);
+          reqsysWriteData(data);
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: true }));
           return;
         }
         res.writeHead(405);
@@ -294,6 +316,84 @@ function apply(ctx, config) {
               res.end(JSON.stringify({ error: e.message }));
             }
           });
+          return;
+        }
+        res.writeHead(405);
+        res.end('Method not allowed');
+        return;
+      }
+
+      // ---- 未竟任务 API ----
+      if (rest === 'api/tasks') {
+        if (req.method === 'GET') {
+          const data = reqsysReadData();
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify(data.tasks || []));
+          return;
+        }
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', chunk => body += chunk);
+          req.on('end', () => {
+            try {
+              const item = JSON.parse(body);
+              const data = reqsysReadData();
+              if (!data.tasks) data.tasks = [];
+              const task = {
+                id: Date.now().toString(36) + Math.random().toString(36).substring(2, 7),
+                timestamp: new Date().toISOString(),
+                description: item.description || '',
+                deadline: item.deadline || '',
+                status: item.status || '未开始',
+              };
+              data.tasks.push(task);
+              reqsysWriteData(data);
+              res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: true, task: task }));
+            } catch (e) {
+              res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ error: e.message }));
+            }
+          });
+          return;
+        }
+        res.writeHead(405);
+        res.end('Method not allowed');
+        return;
+      }
+      if (rest.startsWith('api/tasks/')) {
+        const id = rest.split('/')[2];
+        if (req.method === 'PUT') {
+          let body = '';
+          req.on('data', chunk => body += chunk);
+          req.on('end', () => {
+            try {
+              const updates = JSON.parse(body);
+              const data = reqsysReadData();
+              const t = (data.tasks || []).find(t => t.id === id);
+              if (!t) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+              if (updates.description !== undefined) t.description = updates.description;
+              if (updates.deadline !== undefined) t.deadline = updates.deadline;
+              if (updates.status !== undefined) t.status = updates.status;
+              reqsysWriteData(data);
+              res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ ok: true }));
+            } catch (e) {
+              res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+              res.end(JSON.stringify({ error: e.message }));
+            }
+          });
+          return;
+        }
+        if (req.method === 'DELETE') {
+          const data = reqsysReadData();
+          if (!data.tasks) data.tasks = [];
+          const idx = data.tasks.findIndex(t => t.id === id);
+          if (idx === -1) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+          data.tasks.splice(idx, 1);
+          reqsysWriteData(data);
+          res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ ok: true }));
           return;
         }
         res.writeHead(405);
