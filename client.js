@@ -908,7 +908,7 @@ window.__ModuleLoader__.load({
 										h('textarea', { value: reqTaskInput, onChange: (e) => setReqTaskInput(e.target.value), placeholder: '描述待办事项...', style: { width: '100%', minHeight: '80px', padding: '10px 12px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '14px', lineHeight: 1.5, resize: 'vertical', boxSizing: 'border-box', fontFamily: 'inherit' }, autoFocus: true }),
 										h('div', { style: { marginTop: '12px', fontSize: '13px', color: '#555', display: 'flex', alignItems: 'center', gap: '10px' }, children: [
 											h('span', { children: '截止日期：' }),
-											h('input', { type: 'date', value: reqTaskDeadline, onChange: (e) => setReqTaskDeadline(e.target.value), style: { padding: '6px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px', flex: 1 } }),
+											h('input', { type: 'date', value: reqTaskDeadline, onChange: (e) => setReqTaskDeadline(e.target.value), onClick: (ev) => { try { ev.target.showPicker(); } catch(_) {} }, style: { padding: '6px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px', flex: 1, cursor: 'pointer' } }),
 										]}),
 										h('div', { style: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }, children: [
 											h('button', { className: 'reqsys-maid-btn', onClick: () => setReqView(null), children: '取消' }),
