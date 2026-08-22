@@ -1021,12 +1021,91 @@ window.__ModuleLoader__.load({
 			var rulesData = useState([]);
 			var rules = rulesData[0];
 			var setRules = rulesData[1];
+			var reqFilterVersion = useState([]);
+			var reqFilterVersionVal = reqFilterVersion[0];
+			var setReqFilterVersion = reqFilterVersion[1];
+			var reqShowArchived = useState(false);
+			var reqShowArchivedVal = reqShowArchived[0];
+			var setReqShowArchived = reqShowArchived[1];
+			var versionOpen = useState(false);
+			var versionOpenVal = versionOpen[0];
+			var setVersionOpen = versionOpen[1];
 			var tagOpen = useState(false);
 			var tagOpenVal = tagOpen[0];
 			var setTagOpen = tagOpen[1];
 			var progOpen = useState(false);
 			var progOpenVal = progOpen[0];
 			var setProgOpen = progOpen[1];
+			var batchCmdState = useState('');
+			var batchCmd = batchCmdState[0];
+			var setBatchCmd = batchCmdState[1];
+			var batchConfirmState = useState(null);
+			var batchConfirm = batchConfirmState[0];
+			var setBatchConfirm = batchConfirmState[1];
+
+			// 解析自然语言批量指令
+			function parseBatchCmd(cmd) {
+				var result = { version: '', tag: '', filterStatus: '方案设计', targetStatus: '已发布', desc: '' };
+				// 提取版本号
+				var vMatch = cmd.match(/v?\d+(?:\.\d+)?/);
+				if (vMatch) result.version = vMatch[0];
+				// 提取标签
+				var tagMatch = cmd.match(/(?:标签[为:：]?\s*)(\S+)/);
+				if (!tagMatch) tagMatch = cmd.match(/(\S{2,6})(?:相关需求)/);
+				if (tagMatch) {
+					var t = tagMatch[1].trim();
+					var nonTags = ['版本', '已发布', '方案设计', '废弃', '未处理', '批量', '批量的'];
+					if (nonTags.indexOf(t) === -1) result.tag = t;
+				}
+				// 提取目标状态
+				var statuses = ['已发布', '方案设计', '废弃', '未处理'];
+				for (var si = 0; si < statuses.length; si++) {
+					if (cmd.indexOf(statuses[si]) !== -1) { result.targetStatus = statuses[si]; break; }
+				}
+				// 推断筛选条件：目标=已发布/废弃 → 默认筛选方案设计；目标=方案设计 → 默认筛选未处理
+				if (result.targetStatus === '方案设计') result.filterStatus = '未处理';
+				else result.filterStatus = '方案设计';
+				result.desc = cmd;
+				return result;
+			}
+
+			function doBatchCmd() {
+				var cmd = batchCmd.trim();
+				if (!cmd) return;
+				var parsed = parseBatchCmd(cmd);
+				if (!parsed.version) { alert('未识别到版本号，请确保指令包含版本号如 "v2.0"'); return; }
+				// 筛选匹配项
+				var matches = reqList.filter(function(r) {
+					if (r.version !== parsed.version) return false;
+					if (parsed.tag) {
+						var hasTag = (r.tags || []).indexOf(parsed.tag) !== -1;
+						if (!hasTag) return false;
+					}
+					if (r.progress !== parsed.filterStatus) return false;
+					return true;
+				});
+				if (matches.length === 0) {
+					alert('未找到匹配的需求\n版本: ' + parsed.version + (parsed.tag ? '  标签: ' + parsed.tag : '') + '\n当前进展: ' + parsed.filterStatus);
+					return;
+				}
+				// 打开确认弹框
+				setBatchConfirm({ parsed: parsed, matches: matches, selected: matches.map(function(m) { return m.id; }) });
+			}
+
+			function doBatchExecute(selectedIds) {
+				var matches = batchConfirm.matches.filter(function(m) { return selectedIds.indexOf(m.id) !== -1; });
+				if (matches.length === 0) { setBatchConfirm(null); return; }
+				var target = batchConfirm.parsed.targetStatus;
+				var done = 0;
+				matches.forEach(function(r) {
+					reqsysFetch('/requirements/' + r.id, { method: 'PUT', body: JSON.stringify({ polished: r.polished || r.original, tags: r.tags || [], progress: target, version: r.version, reason: r.reason || '' }) }).then(function() {
+						done++;
+						if (done === matches.length) {
+							reqsysFetch('/requirements').then(function(data) { setReqList(data || []); setBatchCmd(''); setBatchConfirm(null); }).catch(function(e) { alert('刷新失败: ' + e.message); });
+						}
+					}).catch(function(e) { alert('更新失败: ' + e.message); });
+				});
+			}
 
 			var allTags = [];
 			var allProgs = ['未处理', '方案设计', '已发布', '废弃'];
@@ -1035,8 +1114,15 @@ window.__ModuleLoader__.load({
 					if (allTags.indexOf(t) === -1) allTags.push(t);
 				});
 			});
+			var allVersions = [];
+			reqList.forEach(function(r) {
+				var v = (r.version || '').trim();
+				if (v && allVersions.indexOf(v) === -1) allVersions.push(v);
+			});
+			allVersions.sort();
 
 			var filtered = reqList.filter(function(r) {
+				if (reqShowArchivedVal ? !r.archived : r.archived) return false;
 				if (reqFilterTags.length > 0) {
 					var hasTag = false;
 					reqFilterTags.forEach(function(t) { if ((r.tags || []).indexOf(t) !== -1) hasTag = true; });
@@ -1050,12 +1136,16 @@ window.__ModuleLoader__.load({
 					var desc = (r.polished || r.original || '').toLowerCase();
 					if (desc.indexOf(s) === -1) return false;
 				}
+				if (reqFilterVersionVal.length > 0) {
+					var rv = r.version || '';
+					if (reqFilterVersionVal.indexOf(rv) === -1) return false;
+				}
 				return true;
 			});
 
 			useEffect(function() {
 				setPageFn(0);
-			}, [reqFilterTags, reqFilterProgs, reqFilterSearch]);
+			}, [reqFilterTags, reqFilterProgs, reqFilterSearch, reqFilterVersionVal]);
 
 			var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 			var pageStart = currentPage * PAGE_SIZE;
@@ -1109,15 +1199,45 @@ window.__ModuleLoader__.load({
 					]})]}) });
 			}
 
+			// 批量确认弹框
+			if (batchConfirm) {
+				var bp = batchConfirm.parsed;
+				var bm = batchConfirm.matches;
+				var bs = batchConfirm.selected;
+				return h('div', { style: { position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: function(e) { if (e.target === e.currentTarget) setBatchConfirm(null); }, children: h('div', { className: 'reqsys-card-wrap', style: { width: '700px', maxWidth: '92vw' }, children: [
+					h('div', { className: 'reqsys-card', style: { maxHeight: '80vh', overflowY: 'auto' }, children: [
+						h('h3', { style: { margin: '0 0 8px 0', fontSize: '16px', fontWeight: 600 }, children: '批量执行确认' }),
+						h('div', { style: { fontSize: '13px', color: '#555', marginBottom: '12px', padding: '8px 12px', background: '#f8f6ff', borderRadius: '6px' }, children: [
+							h('div', { children: '指令: ' + bp.desc }),
+							h('div', { style: { marginTop: '4px' }, children: '将版本 ' + bp.version + (bp.tag ? ' 标签 ' + bp.tag : '') + ' 中进展为"' + bp.filterStatus + '" 的 ' + bm.length + ' 条需求 → 改为 "' + bp.targetStatus + '"' }),
+						]}),
+						h('div', { style: { fontSize: '12px', color: '#888', marginBottom: '8px' }, children: '取消勾选以排除（共 ' + bm.length + ' 条匹配）' }),
+						bm.map(function(m, mi) {
+							var checked = bs.indexOf(m.id) !== -1;
+							return h('div', { key: m.id, style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 8px', background: checked ? '#fff' : '#f5f5f5', borderRadius: '6px', marginBottom: '4px', border: '1px solid ' + (checked ? '#e8e0f0' : '#eee') }, children: [
+								h('input', { type: 'checkbox', checked: checked, onChange: function() { var idx = bs.indexOf(m.id); if (idx === -1) { setBatchConfirm(Object.assign({}, batchConfirm, { selected: bs.concat([m.id]) })); } else { var ns = bs.slice(); ns.splice(idx, 1); setBatchConfirm(Object.assign({}, batchConfirm, { selected: ns })); } }, style: { cursor: 'pointer', margin: 0 } }),
+								h('span', { style: { flex: 1, fontSize: '13px', color: checked ? '#333' : '#999', textDecoration: checked ? 'none' : 'line-through' }, children: (m.polished || m.original || '') + ' (v' + m.version + ')' }),
+							]});
+						}),
+						h('div', { style: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '12px' }, children: [
+							h('button', { className: 'reqsys-maid-btn', onClick: function() { setBatchConfirm(null); }, children: '取消' }),
+							h('button', { className: 'reqsys-maid-btn primary', onClick: function() { doBatchExecute(bs); }, disabled: bs.length === 0, children: '执行 (' + bs.length + ' 条)' }),
+						]}),
+					]})]}) });
+			}
+
 			return h('div', { className: 'reqsys-card-wrap', style: { width: '960px', maxWidth: '92vw' }, children: [
 				h('div', { className: 'reqsys-card', style: { height: '70vh', overflowY: 'auto' }, children: [
 				h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }, children: [
-					h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 行迹' }),
+					h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' }, children: [
+						h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 行迹' }),
+						h('span', { style: { padding: '4px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: !reqShowArchivedVal ? '#8e6bb0' : '#f0f2f5', color: !reqShowArchivedVal ? '#fff' : '#555' }, onClick: function() { setReqShowArchived(false); }, children: '活动中' }),
+						h('span', { style: { padding: '4px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: reqShowArchivedVal ? '#8e6bb0' : '#f0f2f5', color: reqShowArchivedVal ? '#fff' : '#555' }, onClick: function() { setReqShowArchived(true); }, children: '已归档' }),
+					]}),
 					h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' }, children: [
 						h('button', { className: 'reqsys-maid-btn', style: { background: '#25a55e', color: '#fff', border: 'none' }, onClick: function() { var BOM = '\uFEFF'; var header = '记录时间,需求描述,标签,当前进展,版本,废弃原因\n'; var rows = filtered.map(function(r) { var desc = (r.polished || r.original || '').replace(/"/g, '""'); var tags = (r.tags || []).join('; '); return fmtTime(r.timestamp) + ',"' + desc + '",' + tags + ',' + (r.progress || '未处理') + ',' + (r.version || '') + ',' + (r.reason || ''); }).join('\n'); var blob = new Blob([BOM + header + rows], { type: 'text/csv;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '行迹_' + new Date().toISOString().slice(0,10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 CSV' }),
 						h('button', { className: 'reqsys-maid-btn', onClick: function() { var blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '行迹_' + new Date().toISOString().slice(0,10) + '.json'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 JSON' }),
 						h('button', { className: 'reqsys-maid-btn', style: { background: '#8e6bb0', color: '#fff', border: 'none' }, onClick: function() { reqsysFetch('/rules').then(function(r) { setRules(r || []); setShowRules(true); }).catch(function(e) { alert('加载规则失败: ' + e.message); }); }, children: '⚙ 配置标签' }),
-						h('button', { className: 'reqsys-maid-btn', onClick: onClose, children: '关闭' }),
 					]}),
 				]}),
 				h('div', { className: 'reqsys-filter-bar', children: [
@@ -1150,10 +1270,30 @@ window.__ModuleLoader__.load({
 						]}),
 					]}),
 					h('div', { className: 'filter-group', children: [
+						h('span', { className: 'filter-label', children: '版本' }),
+						h('div', { style: { position: 'relative' }, children: [
+							h('button', { className: 'reqsys-maid-btn', style: { padding: '4px 12px', fontSize: '12px', minWidth: '120px', textAlign: 'left' }, onClick: function() { setVersionOpen(!versionOpenVal); }, children: '版本 ' + (reqFilterVersionVal.length > 0 ? '(' + reqFilterVersionVal.length + ')' : '') + (versionOpenVal ? ' ▲' : ' ▼') }),
+							versionOpenVal ? h('div', { style: { position: 'fixed', inset: 0, zIndex: 9 }, onClick: function() { setVersionOpen(false); } }) : null,
+							versionOpenVal ? h('div', { style: { position: 'absolute', top: '100%', left: 0, zIndex: 10, background: '#fff', border: '1px solid #ddd', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,.15)', padding: '6px', minWidth: '160px', maxHeight: '200px', overflowY: 'auto' }, children: allVersions.map(function(v) {
+								var active = reqFilterVersionVal.indexOf(v) !== -1;
+								return h('div', { key: v, style: { padding: '4px 8px', cursor: 'pointer', borderRadius: '4px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', background: active ? '#e8f0fe' : 'transparent' }, onClick: function() { var idx = reqFilterVersionVal.indexOf(v); if (idx === -1) { setReqFilterVersion(reqFilterVersionVal.concat([v])); } else { var nv = reqFilterVersionVal.slice(); nv.splice(idx, 1); setReqFilterVersion(nv); } }, children: [
+									h('input', { type: 'checkbox', checked: active, style: { margin: 0, cursor: 'pointer' }, onChange: function() {} }),
+									h('span', { children: v }),
+								]});
+							}) }) : null,
+						]}),
+					]}),
+					h('div', { className: 'filter-group', children: [
 						h('span', { className: 'filter-label', children: '搜索' }),
-						h('input', { type: 'text', value: reqFilterSearch, onChange: function(e) { setReqFilterSearch(e.target.value); }, placeholder: '搜索需求描述...', style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', width: '440px', boxSizing: 'border-box' } }),
+						h('input', { type: 'text', value: reqFilterSearch, onChange: function(e) { setReqFilterSearch(e.target.value); }, placeholder: '搜索需求描述...', style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', width: '300px', boxSizing: 'border-box' } }),
 					]}),
 					h('span', { className: 'filter-count', children: '共 ' + filtered.length + ' 条' }),
+					h('button', { className: 'reqsys-maid-btn', style: { padding: '4px 10px', fontSize: '11px', color: '#888', border: '1px solid #ddd', background: '#fff', alignSelf: 'flex-end' }, onClick: function() { setReqFilterTags([]); setReqFilterProgs([]); setReqFilterSearch(''); setReqFilterVersion([]); setBatchCmd(''); }, children: '重置' }),
+				]}),
+				// 批量指令栏
+				h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', padding: '8px 12px', background: '#f8f6ff', borderRadius: '8px', border: '1px solid #e8e0f0' }, children: [
+					h('input', { type: 'text', value: batchCmd, onChange: function(e) { setBatchCmd(e.target.value); }, onKeyDown: function(e) { if (e.key === 'Enter') { e.preventDefault(); doBatchCmd(); } }, placeholder: '批量指令：输入版本号，如 "v2.0 已发布"', style: { flex: 1, padding: '6px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '13px', boxSizing: 'border-box' } }),
+					h('button', { className: 'reqsys-maid-btn', style: { background: '#8e6bb0', color: '#fff', border: 'none', padding: '6px 14px', fontSize: '13px' }, onClick: function() { doBatchCmd(); }, children: '批量执行' }),
 				]}),
 				filtered.length === 0
 					? h('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#999' }, children: '暂无匹配的需求记录' })
@@ -1166,20 +1306,30 @@ window.__ModuleLoader__.load({
 							h('th', { style: { width: '100px' }, children: '当前进展' }),
 							h('th', { style: { width: '80px' }, children: '版本' }),
 							h('th', { style: { width: '80px' }, children: '废弃原因' }),
-							h('th', { style: { width: '50px' }, children: '操作' }),
+							h('th', { style: { width: '100px' }, children: '归档时间' }),
+							h('th', { style: { width: '60px' }, children: '操作' }),
 						]}) }),
 						h('tbody', { children: pageItems.map(function(r, i) {
+							var readOnly = reqShowArchivedVal;
+							var roUpdateReq = readOnly ? function() {} : updateReq;
 							return h('tr', { key: r.id, children: [
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', color: '#999', fontSize: '11px' }, children: pageStart + i + 1 }),
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#888', whiteSpace: 'nowrap' }, children: fmtTime(r.timestamp) }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word', cursor: 'pointer' }, onClick: function() { showEditDialog('编辑需求描述', r.polished || r.original || '', true).then(function(newDesc) { if (newDesc === null) return; updateReqPolished(r.id, newDesc.trim()); }); }, children: r.polished || r.original || '' }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word', cursor: readOnly ? 'default' : 'pointer' }, onClick: readOnly ? null : function() { showEditDialog('编辑需求描述', r.polished || r.original || '', true).then(function(newDesc) { if (newDesc === null) return; updateReqPolished(r.id, newDesc.trim()); }); }, children: r.polished || r.original || '' }),
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: (r.tags || []).map(function(t) {
 									return h('span', { key: t, style: { display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 500, background: '#e8f0fe', color: '#1a5cc8', margin: '1px 2px' }, children: t });
 								}) }),
-								ReqsysSelectCell(r, updateReq),
-								ReqsysVersionCell(r, updateReq),
-								ReqsysReasonCell(r, updateReq),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center' }, onClick: function() { if (confirm('delete this item?')) { reqsysFetch('/requirements/' + r.id, { method: 'DELETE' }).then(function() { setReqList(function(list) { return list.filter(function(item) { return item.id !== r.id; }); }); }).catch(function(e) { alert('delete failed: ' + e.message); }); } }, children: h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, children: 'x' }) }),
+								ReqsysSelectCell(r, roUpdateReq),
+								ReqsysVersionCell(r, roUpdateReq),
+								ReqsysReasonCell(r, roUpdateReq),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#999', whiteSpace: 'nowrap' }, children: r.archivedAt ? fmtTime(r.archivedAt) : '' }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center', whiteSpace: 'nowrap' }, children: readOnly ? [
+									h('span', { style: { cursor: 'pointer', color: '#25a55e', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/requirements/' + r.id, { method: 'PUT', body: JSON.stringify({ archived: false, status: '未处理' }) }).then(function() { setReqList(function(list) { return list.map(function(item) { if (item.id !== r.id) return item; return Object.assign({}, item, { archived: false, status: '未处理' }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: '重启' }),
+									h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { if (confirm('delete this item?')) { reqsysFetch('/requirements/' + r.id, { method: 'DELETE' }).then(function() { setReqList(function(list) { return list.filter(function(item) { return item.id !== r.id; }); }); }).catch(function(e) { alert('delete failed: ' + e.message); }); } }, children: 'x' }),
+							] : [
+									h('span', { style: { cursor: 'pointer', color: '#8e6bb0', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/requirements/' + r.id, { method: 'PUT', body: JSON.stringify({ archived: !r.archived }) }).then(function() { setReqList(function(list) { return list.map(function(item) { if (item.id !== r.id) return item; return Object.assign({}, item, { archived: !r.archived }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: r.archived ? '📤' : '📦' }),
+									h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { if (confirm('delete this item?')) { reqsysFetch('/requirements/' + r.id, { method: 'DELETE' }).then(function() { setReqList(function(list) { return list.filter(function(item) { return item.id !== r.id; }); }); }).catch(function(e) { alert('delete failed: ' + e.message); }); } }, children: 'x' }),
+							] }),
 							]});
 						}) }),
 					]}) }),
@@ -1226,10 +1376,14 @@ window.__ModuleLoader__.load({
 			var taskPageVal = taskPage[0];
 			var setTaskPage = taskPage[1];
 			var TASK_PAGE_SIZE = 15;
+			var taskShowArchived = useState(false);
+			var taskShowArchivedVal = taskShowArchived[0];
+			var setTaskShowArchived = taskShowArchived[1];
 
 			var allStatuses = ['未开始', '进行中', '已完成'];
 
 			var filtered = taskList.filter(function(t) {
+				if (taskShowArchivedVal ? !t.archived : t.archived) return false;
 				if (taskFilterStatusVal.length > 0 && taskFilterStatusVal.indexOf(t.status || '未开始') === -1) return false;
 				if (taskFilterSearchVal.trim()) {
 					var s = taskFilterSearchVal.trim().toLowerCase();
@@ -1268,11 +1422,14 @@ window.__ModuleLoader__.load({
 			return h('div', { className: 'reqsys-card-wrap', style: { width: '800px', maxWidth: '92vw' }, children: [
 				h('div', { className: 'reqsys-card', style: { height: '70vh', overflowY: 'auto' }, children: [
 				h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }, children: [
-					h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 未竟' }),
+					h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' }, children: [
+						h('h2', { style: { margin: 0, fontSize: '20px', fontWeight: 600 }, children: '📋 未竟' }),
+						h('span', { style: { padding: '4px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: !taskShowArchivedVal ? '#8e6bb0' : '#f0f2f5', color: !taskShowArchivedVal ? '#fff' : '#555' }, onClick: function() { setTaskShowArchived(false); }, children: '活动中' }),
+						h('span', { style: { padding: '4px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', background: taskShowArchivedVal ? '#8e6bb0' : '#f0f2f5', color: taskShowArchivedVal ? '#fff' : '#555' }, onClick: function() { setTaskShowArchived(true); }, children: '已归档' }),
+					]}),
 					h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' }, children: [
 						h('button', { className: 'reqsys-maid-btn', style: { background: '#25a55e', color: '#fff', border: 'none' }, onClick: function() { var BOM = '\uFEFF'; var header = '待办描述,记录时间,截止日期,完成情况\n'; var rows = filtered.map(function(t) { var desc = (t.description || '').replace(/"/g, '""'); return '"' + desc + '",' + fmtTime(t.timestamp) + ',' + (t.deadline || '') + ',' + (t.status || '未开始'); }).join('\n'); var blob = new Blob([BOM + header + rows], { type: 'text/csv;charset=utf-8' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '未竟_' + new Date().toISOString().slice(0,10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 CSV' }),
 						h('button', { className: 'reqsys-maid-btn', onClick: function() { var blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' }); var url = URL.createObjectURL(blob); var a = document.createElement('a'); a.href = url; a.download = '未竟_' + new Date().toISOString().slice(0,10) + '.json'; document.body.appendChild(a); a.click(); setTimeout(function() { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100); }, children: '📥 导出 JSON' }),
-						h('button', { className: 'reqsys-maid-btn', onClick: onClose, children: '关闭' }),
 					]}),
 				]}),
 				h('div', { className: 'reqsys-filter-bar', children: [
@@ -1288,6 +1445,7 @@ window.__ModuleLoader__.load({
 						h('input', { type: 'text', value: taskFilterSearchVal, onChange: function(e) { setTaskFilterSearch(e.target.value); }, placeholder: '搜索待办描述...', style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', width: '300px', boxSizing: 'border-box' } }),
 					]}),
 					h('span', { className: 'filter-count', children: '共 ' + filtered.length + ' 条' }),
+					h('button', { className: 'reqsys-maid-btn', style: { padding: '4px 10px', fontSize: '11px', color: '#888', border: '1px solid #ddd', background: '#fff', alignSelf: 'flex-end' }, onClick: function() { setTaskFilterStatus([]); setTaskFilterSearch(''); }, children: '重置' }),
 				]}),
 				filtered.length === 0
 					? h('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#999' }, children: '暂无匹配的未竟之事' })
@@ -1298,23 +1456,32 @@ window.__ModuleLoader__.load({
 							h('th', { style: { width: '100px' }, children: '记录时间' }),
 							h('th', { style: { width: '120px' }, children: '截止日期' }),
 							h('th', { style: { width: '100px' }, children: '完成情况' }),
-							h('th', { style: { width: '50px' }, children: '操作' }),
+							h('th', { style: { width: '100px' }, children: '归档时间' }),
+							h('th', { style: { width: '60px' }, children: '操作' }),
 						]}) }),
 						h('tbody', { children: pageItems.map(function(t, i) {
+							var readOnly = taskShowArchivedVal;
 							return h('tr', { key: t.id, children: [
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', color: '#999', fontSize: '11px' }, children: pageStart + i + 1 }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word', cursor: 'pointer' }, onClick: function() { showEditDialog('编辑待办描述', t.description, true).then(function(nd) { if (nd === null) return; updateTask(t.id, { description: nd.trim() }); }); }, children: t.description }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word', cursor: readOnly ? 'default' : 'pointer' }, onClick: readOnly ? null : function() { showEditDialog('编辑待办描述', t.description, true).then(function(nd) { if (nd === null) return; updateTask(t.id, { description: nd.trim() }); }); }, children: t.description }),
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#888', whiteSpace: 'nowrap' }, children: fmtTime(t.timestamp) }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px', whiteSpace: 'nowrap', cursor: 'pointer', color: (function() { if (!t.deadline) return 'inherit'; var now = new Date(); var dl = new Date(t.deadline); var diff = (dl - now) / (1000 * 60 * 60 * 24); if (diff < 2 && t.status !== '已完成') return '#e55'; return 'inherit'; })() }, onClick: function(e) { var rect = e.currentTarget.getBoundingClientRect(); var inp = document.createElement('input'); inp.type = 'date'; inp.value = t.deadline || ''; inp.style.position = 'fixed'; inp.style.left = rect.left + 'px'; inp.style.top = rect.bottom + 'px'; inp.style.opacity = '0'; inp.style.pointerEvents = 'none'; inp.style.width = '1px'; inp.style.height = '1px'; document.body.appendChild(inp); inp.addEventListener('change', function() { var val = inp.value; document.body.removeChild(inp); if (val) updateTask(t.id, { deadline: val }); }); inp.addEventListener('blur', function() { if (document.body.contains(inp)) document.body.removeChild(inp); }); setTimeout(function() { inp.showPicker(); }, 10); }, children: t.deadline || '-' }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: h('select', { value: t.status || '未开始', onChange: function(e) { updateTask(t.id, { status: e.target.value }); }, style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }, children: [
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '12px', whiteSpace: 'nowrap', cursor: readOnly ? 'default' : 'pointer', color: (function() { if (!t.deadline) return 'inherit'; var now = new Date(); var dl = new Date(t.deadline); var diff = (dl - now) / (1000 * 60 * 60 * 24); if (diff < 2 && t.status !== '已完成') return '#e55'; return 'inherit'; })() }, onClick: readOnly ? null : function(e) { var rect = e.currentTarget.getBoundingClientRect(); var inp = document.createElement('input'); inp.type = 'date'; inp.value = t.deadline || ''; inp.style.position = 'fixed'; inp.style.left = rect.left + 'px'; inp.style.top = rect.bottom + 'px'; inp.style.opacity = '0'; inp.style.pointerEvents = 'none'; inp.style.width = '1px'; inp.style.height = '1px'; document.body.appendChild(inp); inp.addEventListener('change', function() { var val = inp.value; document.body.removeChild(inp); if (val) updateTask(t.id, { deadline: val }); }); inp.addEventListener('blur', function() { if (document.body.contains(inp)) document.body.removeChild(inp); }); setTimeout(function() { inp.showPicker(); }, 10); }, children: t.deadline || '-' }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: readOnly ? h('span', { style: { fontSize: '12px', color: '#888' }, children: t.status || '未开始' }) : h('select', { value: t.status || '未开始', onChange: function(e) { updateTask(t.id, { status: e.target.value }); }, style: { padding: '4px 8px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }, children: [
 									h('option', { value: '未开始', children: '未开始' }),
 									h('option', { value: '进行中', children: '进行中' }),
 									h('option', { value: '已完成', children: '已完成' }),
 								] }) }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center' }, children: h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { deleteTask(t.id); }, children: 'x' }) }),
-							]});
-						}) }),
-					]}) }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#999', whiteSpace: 'nowrap' }, children: t.archivedAt ? fmtTime(t.archivedAt) : '' }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center', whiteSpace: 'nowrap' }, children: readOnly ? [
+								h('span', { style: { cursor: 'pointer', color: '#25a55e', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/tasks/' + t.id, { method: 'PUT', body: JSON.stringify({ archived: false, status: '未开始' }) }).then(function() { setTaskList(function(list) { return list.map(function(item) { if (item.id !== t.id) return item; return Object.assign({}, item, { archived: false, status: '未开始' }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: '重启' }),
+								h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { deleteTask(t.id); }, children: 'x' }),
+							] : [
+								h('span', { style: { cursor: 'pointer', color: '#8e6bb0', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/tasks/' + t.id, { method: 'PUT', body: JSON.stringify({ archived: !t.archived }) }).then(function() { setTaskList(function(list) { return list.map(function(item) { if (item.id !== t.id) return item; return Object.assign({}, item, { archived: !t.archived }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: t.archived ? '📤' : '📦' }),
+								h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { deleteTask(t.id); }, children: 'x' }),
+							] }),
+						] });
+					}) }),
+				] }) }),
 				filtered.length > TASK_PAGE_SIZE ? h('div', { style: { display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', padding: '12px 0 4px', fontSize: '13px', color: '#555' }, children: [
 					h('button', { className: 'reqsys-maid-btn', style: { padding: '4px 12px', fontSize: '12px' }, onClick: function() { setTaskPage(Math.max(0, taskPageVal - 1)); }, disabled: taskPageVal === 0, children: '< ' }),
 					h('span', { style: { fontSize: '12px', color: '#888' }, children: (taskPageVal + 1) + ' / ' + totalPages }),

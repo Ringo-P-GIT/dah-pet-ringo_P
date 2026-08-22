@@ -268,6 +268,15 @@ function apply(ctx, config) {
               if (updates.reason !== undefined) r.reason = updates.reason;
               if (updates.polished !== undefined) r.polished = updates.polished;
               if (updates.tags !== undefined) r.tags = updates.tags;
+              if (updates.archived !== undefined) {
+                r.archived = updates.archived;
+                if (updates.archived) {
+                  r.archivedAt = new Date().toISOString();
+                } else {
+                  delete r.archivedAt;
+                }
+              }
+              if (updates.status !== undefined) r.status = updates.status;
               reqsysWriteData(data);
               res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
               res.end(JSON.stringify({ ok: true }));
@@ -375,6 +384,14 @@ function apply(ctx, config) {
               if (updates.description !== undefined) t.description = updates.description;
               if (updates.deadline !== undefined) t.deadline = updates.deadline;
               if (updates.status !== undefined) t.status = updates.status;
+              if (updates.archived !== undefined) {
+                t.archived = updates.archived;
+                if (updates.archived) {
+                  t.archivedAt = new Date().toISOString();
+                } else {
+                  delete t.archivedAt;
+                }
+              }
               reqsysWriteData(data);
               res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
               res.end(JSON.stringify({ ok: true }));
