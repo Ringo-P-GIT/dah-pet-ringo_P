@@ -1306,7 +1306,7 @@ window.__ModuleLoader__.load({
 							h('th', { style: { width: '100px' }, children: '当前进展' }),
 							h('th', { style: { width: '80px' }, children: '版本' }),
 							h('th', { style: { width: '80px' }, children: '废弃原因' }),
-							h('th', { style: { width: '100px' }, children: '归档时间' }),
+							reqShowArchivedVal ? h('th', { style: { width: '100px' }, children: '归档时间' }) : null,
 							h('th', { style: { width: '60px' }, children: '操作' }),
 						]}) }),
 						h('tbody', { children: pageItems.map(function(r, i) {
@@ -1322,9 +1322,9 @@ window.__ModuleLoader__.load({
 								ReqsysSelectCell(r, roUpdateReq),
 								ReqsysVersionCell(r, roUpdateReq),
 								ReqsysReasonCell(r, roUpdateReq),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#999', whiteSpace: 'nowrap' }, children: r.archivedAt ? fmtTime(r.archivedAt) : '' }),
+								reqShowArchivedVal ? h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#999', whiteSpace: 'nowrap' }, children: r.archivedAt ? fmtTime(r.archivedAt) : '' }) : null,
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center', whiteSpace: 'nowrap' }, children: readOnly ? [
-									h('span', { style: { cursor: 'pointer', color: '#25a55e', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/requirements/' + r.id, { method: 'PUT', body: JSON.stringify({ archived: false, status: '未处理' }) }).then(function() { setReqList(function(list) { return list.map(function(item) { if (item.id !== r.id) return item; return Object.assign({}, item, { archived: false, status: '未处理' }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: '重启' }),
+									h('span', { style: { cursor: 'pointer', color: '#25a55e', fontSize: '16px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/requirements/' + r.id, { method: 'PUT', body: JSON.stringify({ archived: false, progress: '未处理' }) }).then(function() { setReqList(function(list) { return list.map(function(item) { if (item.id !== r.id) return item; return Object.assign({}, item, { archived: false, progress: '未处理' }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: '🔄' }),
 									h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { if (confirm('delete this item?')) { reqsysFetch('/requirements/' + r.id, { method: 'DELETE' }).then(function() { setReqList(function(list) { return list.filter(function(item) { return item.id !== r.id; }); }); }).catch(function(e) { alert('delete failed: ' + e.message); }); } }, children: 'x' }),
 							] : [
 									h('span', { style: { cursor: 'pointer', color: '#8e6bb0', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/requirements/' + r.id, { method: 'PUT', body: JSON.stringify({ archived: !r.archived }) }).then(function() { setReqList(function(list) { return list.map(function(item) { if (item.id !== r.id) return item; return Object.assign({}, item, { archived: !r.archived }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: r.archived ? '📤' : '📦' }),
@@ -1456,7 +1456,7 @@ window.__ModuleLoader__.load({
 							h('th', { style: { width: '100px' }, children: '记录时间' }),
 							h('th', { style: { width: '120px' }, children: '截止日期' }),
 							h('th', { style: { width: '100px' }, children: '完成情况' }),
-							h('th', { style: { width: '100px' }, children: '归档时间' }),
+							taskShowArchivedVal ? h('th', { style: { width: '100px' }, children: '归档时间' }) : null,
 							h('th', { style: { width: '60px' }, children: '操作' }),
 						]}) }),
 						h('tbody', { children: pageItems.map(function(t, i) {
@@ -1471,9 +1471,9 @@ window.__ModuleLoader__.load({
 									h('option', { value: '进行中', children: '进行中' }),
 									h('option', { value: '已完成', children: '已完成' }),
 								] }) }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#999', whiteSpace: 'nowrap' }, children: t.archivedAt ? fmtTime(t.archivedAt) : '' }),
+								taskShowArchivedVal ? h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#999', whiteSpace: 'nowrap' }, children: t.archivedAt ? fmtTime(t.archivedAt) : '' }) : null,
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center', whiteSpace: 'nowrap' }, children: readOnly ? [
-								h('span', { style: { cursor: 'pointer', color: '#25a55e', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/tasks/' + t.id, { method: 'PUT', body: JSON.stringify({ archived: false, status: '未开始' }) }).then(function() { setTaskList(function(list) { return list.map(function(item) { if (item.id !== t.id) return item; return Object.assign({}, item, { archived: false, status: '未开始' }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: '重启' }),
+								h('span', { style: { cursor: 'pointer', color: '#25a55e', fontSize: '16px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/tasks/' + t.id, { method: 'PUT', body: JSON.stringify({ archived: false, status: '未开始' }) }).then(function() { setTaskList(function(list) { return list.map(function(item) { if (item.id !== t.id) return item; return Object.assign({}, item, { archived: false, status: '未开始' }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: '🔄' }),
 								h('span', { style: { cursor: 'pointer', color: '#e55', fontSize: '16px', lineHeight: 1 }, onClick: function() { deleteTask(t.id); }, children: 'x' }),
 							] : [
 								h('span', { style: { cursor: 'pointer', color: '#8e6bb0', fontSize: '13px', lineHeight: 1, marginRight: '6px' }, onClick: function() { reqsysFetch('/tasks/' + t.id, { method: 'PUT', body: JSON.stringify({ archived: !t.archived }) }).then(function() { setTaskList(function(list) { return list.map(function(item) { if (item.id !== t.id) return item; return Object.assign({}, item, { archived: !t.archived }); }); }); }).catch(function(e) { alert('failed: ' + e.message); }); }, children: t.archived ? '📤' : '📦' }),
