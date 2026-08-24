@@ -1209,11 +1209,17 @@ window.__ModuleLoader__.load({
 				});
 			});
 			var allVersions = [];
+			var hasEmptyVersion = false;
 			currentTabItems.forEach(function(r) {
 				var v = (r.version || '').trim();
-				if (v && allVersions.indexOf(v) === -1) allVersions.push(v);
+				if (v) {
+					if (allVersions.indexOf(v) === -1) allVersions.push(v);
+				} else {
+					hasEmptyVersion = true;
+				}
 			});
 			allVersions.sort();
+			if (hasEmptyVersion) allVersions.unshift('(空)');
 
 			var filtered = reqList.filter(function(r) {
 				if (reqShowArchivedVal ? !r.archived : r.archived) return false;
@@ -1232,7 +1238,12 @@ window.__ModuleLoader__.load({
 				}
 				if (reqFilterVersionVal.length > 0) {
 					var rv = r.version || '';
-					if (reqFilterVersionVal.indexOf(rv) === -1) return false;
+					var matchesFilter = false;
+					reqFilterVersionVal.forEach(function(fv) {
+						if (fv === '(空)' && !rv) { matchesFilter = true; }
+						else if (fv !== '(空)' && fv === rv) { matchesFilter = true; }
+					});
+					if (!matchesFilter) return false;
 				}
 				return true;
 			});
