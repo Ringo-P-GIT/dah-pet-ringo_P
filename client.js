@@ -1039,6 +1039,12 @@ window.__ModuleLoader__.load({
 			var batchCmdState = useState('');
 			var batchCmd = batchCmdState[0];
 			var setBatchCmd = batchCmdState[1];
+			var editingTagRow = useState(null);
+			var editingTagRowId = editingTagRow[0];
+			var setEditingTagRow = editingTagRow[1];
+			var editingTagInput = useState('');
+			var editingTagInputVal = editingTagInput[0];
+			var setEditingTagInput = editingTagInput[1];
 			var batchConfirmState = useState(null);
 			var batchConfirm = batchConfirmState[0];
 			var setBatchConfirm = batchConfirmState[1];
@@ -1281,6 +1287,17 @@ window.__ModuleLoader__.load({
 				}).catch(function(e) { alert('更新失败: ' + e.message); });
 			}
 
+			function updateReqTags(id, tags) {
+				return reqsysFetch('/requirements/' + id, { method: 'PUT', body: JSON.stringify({ tags: tags }) }).then(function() {
+					setReqList(function(list) {
+						return list.map(function(r) {
+							if (r.id !== id) return r;
+							return Object.assign({}, r, { tags: tags });
+						});
+					});
+				}).catch(function(e) { alert('标签更新失败: ' + e.message); });
+			}
+
 			// 标签规则管理弹窗
 			if (showRulesVal) {
 				return h('div', { style: { position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }, onClick: function(e) { if (e.target === e.currentTarget) setShowRules(false); }, children: h('div', { className: 'reqsys-card-wrap', style: { width: '500px', maxWidth: '92vw' }, children: [
@@ -1424,9 +1441,29 @@ window.__ModuleLoader__.load({
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', textAlign: 'center', verticalAlign: 'middle' }, children: h('input', { type: 'checkbox', checked: reqSelectedIds.indexOf(r.id) !== -1, onChange: function() { var idx = reqSelectedIds.indexOf(r.id); if (idx === -1) { setReqSelectedIds(reqSelectedIds.concat([r.id])); } else { var ns = reqSelectedIds.slice(); ns.splice(idx, 1); setReqSelectedIds(ns); } }, style: { cursor: 'pointer', margin: 0, verticalAlign: 'middle' } }) }),
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '11px', color: '#888', whiteSpace: 'nowrap' }, children: fmtTime(r.timestamp) }),
 								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', fontSize: '13px', whiteSpace: 'normal', wordBreak: 'break-word', cursor: readOnly ? 'default' : 'pointer' }, onClick: readOnly ? null : function() { showEditDialog('编辑需求描述', r.polished || r.original || '', true).then(function(newDesc) { if (newDesc === null) return; updateReqPolished(r.id, newDesc.trim()); }); }, children: r.polished || r.original || '' }),
-								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0' }, children: (r.tags || []).map(function(t) {
-									return h('span', { key: t, style: { display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 500, background: '#e8f0fe', color: '#1a5cc8', margin: '1px 2px' }, children: t });
-								}) }),
+								h('td', { style: { padding: '8px 10px', borderBottom: '1px solid #f0f0f0', cursor: readOnly ? 'default' : 'pointer' }, onClick: readOnly ? null : function(e) { e.stopPropagation(); if (editingTagRowId === r.id) return; setEditingTagRow(r.id); setEditingTagInput(''); }, children: (function() {
+									if (editingTagRowId !== r.id) {
+										var tags = r.tags || [];
+										return tags.length > 0
+											? tags.map(function(t) {
+												return h('span', { key: t, style: { display: 'inline-block', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 500, background: '#e8f0fe', color: '#1a5cc8', margin: '1px 2px' }, children: t });
+											})
+											: h('span', { style: { fontSize: '12px', color: '#ccc' }, children: '点击添加' });
+									}
+									var currentTags = (r.tags || []).slice();
+									return h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center', minWidth: '160px' }, children: [].concat(
+										currentTags.map(function(t, ti) {
+											return h('span', { key: t, style: { display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 500, background: '#e8f0fe', color: '#1a5cc8', cursor: 'default' }, children: [
+												t,
+												h('span', { style: { cursor: 'pointer', fontSize: '13px', lineHeight: '1', color: '#1a5cc8', opacity: 0.6 }, onClick: function(e) { e.stopPropagation(); var newTags = currentTags.filter(function(_, i) { return i !== ti; }); updateReqTags(r.id, newTags); if (newTags.length === 0) setEditingTagRow(null); }, children: '×' }),
+											]});
+										}),
+										[
+											h('input', { key: '_input', type: 'text', value: editingTagInputVal, placeholder: '回车添加', style: { border: 'none', outline: 'none', fontSize: '12px', flex: 1, minWidth: '60px', padding: '2px 4px', background: 'transparent' }, onChange: function(e) { setEditingTagInput(e.target.value); }, onKeyDown: function(e) { if (e.key === 'Enter') { e.preventDefault(); var val = editingTagInputVal.trim(); if (val) { var newTags = currentTags.concat([val]); updateReqTags(r.id, newTags); setEditingTagInput(''); } else { setEditingTagRow(null); } } if (e.key === 'Escape') { setEditingTagRow(null); } }, onBlur: function() { setTimeout(function() { setEditingTagRow(null); }, 200); }, autoFocus: true }),
+											h('span', { style: { cursor: 'pointer', fontSize: '14px', color: '#888', lineHeight: 1, padding: '0 2px' }, onClick: function(e) { e.stopPropagation(); setEditingTagRow(null); }, children: '✓' }),
+										]
+									));
+								})() }),
 								ReqsysSelectCell(r, roUpdateReq),
 								ReqsysVersionCell(r, roUpdateReq),
 								ReqsysReasonCell(r, roUpdateReq),
