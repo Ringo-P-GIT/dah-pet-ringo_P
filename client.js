@@ -1462,7 +1462,7 @@ window.__ModuleLoader__.load({
 											h('input', { key: '_input', type: 'text', value: editingTagInputVal, placeholder: '回车添加', style: { border: 'none', outline: 'none', fontSize: '12px', flex: 1, minWidth: '60px', padding: '2px 4px', background: 'transparent' }, onChange: function(e) { setEditingTagInput(e.target.value); }, onKeyDown: function(e) { if (e.key === 'Enter') { e.preventDefault(); var val = editingTagInputVal.trim(); if (val) { var newTags = currentTags.concat([val]); updateReqTags(r.id, newTags); setEditingTagInput(''); } else { setEditingTagRow(null); } } if (e.key === 'Escape') { setEditingTagRow(null); } }, onBlur: function() { setTimeout(function() { setEditingTagRow(null); }, 200); }, autoFocus: true }),
 											h('span', { style: { cursor: 'pointer', fontSize: '14px', color: '#888', lineHeight: 1, padding: '0 2px' }, onClick: function(e) { e.stopPropagation(); setEditingTagRow(null); }, children: '✓' }),
 										]
-									));
+									)});
 								})() }),
 								ReqsysSelectCell(r, roUpdateReq),
 								ReqsysVersionCell(r, roUpdateReq),
